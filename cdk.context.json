@@ -1,12 +1,18 @@
 {
-  "vpc_name": "default",
-  "ec2_private_key_pair_name": "your-ec2-private-key-pair-name(exclude .pem extension)",
-  "ec2_bastion_key_pair_name": "your-ec2-bastion-key-pair-name(exclude .pem extension)",
+  "existing_vpc_name": "default",
+  "use_existing_vpc": false,
+  "project_prefix": "S3BucketSync",
+  "project_name": "project-name",
+  "ec2_private_key_pair_name": "existing-ec2-private-key-pair-name(exclude .pem extension)",
+  "ec2_bastion_key_pair_name": "existing-ec2-bastion-key-pair-name(exclude .pem extension)",
   "availability-zones:account=551189548322:region=us-west-2": [
     "us-west-2a",
     "us-west-2b",
     "us-west-2c",
     "us-west-2d"
   ],
-  "bucket_name": "bucket-to-sync-from"
+  "bucket_name": "bucket-to-sync-from",
+  "acknowledged-issue-numbers": [
+    29483
+  ]
 }

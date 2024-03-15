@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# -*- encoding: utf-8 -*-
-# vim: tabstop=2 shiftwidth=2 softtabstop=2 expandtab
 
 import os
 
@@ -11,92 +9,112 @@ from aws_cdk import (
   aws_ec2,
   aws_iam
 )
+
+from aws_cdk.aws_ec2 import IKeyPair
+
 from constructs import Construct
 
 
 class Ec2PrivateWithPemKeyStack(Stack):
 
-  def __init__(self, scope: Construct, construct_id: str, vpc, bastion_security_group_id, **kwargs) -> None:
-    super().__init__(scope, construct_id, **kwargs)
+  def cfn_output_set(self) -> None:
+    # cloudformation exports
+    cdk.CfnOutput(self, 'PrivateHostId',
+      value=self.host.instance_id,
+      export_name=f'{self.stack_name}-PrivateHostId')
+    
+    cdk.CfnOutput(self, 'PrivateHostSecurityGroupId',
+      value=self.security_group.security_group_id,
+      export_name=f'{self.stack_name}-PrivateHostSecurityGroupId')
 
+    cdk.CfnOutput(self, 'PrivateHostPrivateIP',
+      value=self.host.instance_private_ip,
+      export_name=f'{self.stack_name}-PrivateHostPrivateIP')
+    
+  def ec2_keypair_get(self) -> None:
     EC2_PRIVATE_KEY_PAIR_NAME = self.node.try_get_context("ec2_private_key_pair_name")
-    ec2_key_pair = aws_ec2.KeyPair.from_key_pair_attributes(self, 'EC2KeyPair',
+    self.ec2_key_pair = aws_ec2.KeyPair.from_key_pair_attributes(self, 'EC2KeyPair',
       key_pair_name=EC2_PRIVATE_KEY_PAIR_NAME
     )
-
-    #XXX: https://docs.aws.amazon.com/cdk/api/latest/python/aws_cdk.aws_ec2/InstanceClass.html
-    #XXX: https://docs.aws.amazon.com/cdk/api/latest/python/aws_cdk.aws_ec2/InstanceSize.html#aws_cdk.aws_ec2.InstanceSize
-    ec2_instance_type = aws_ec2.InstanceType.of(
-      aws_ec2.InstanceClass.BURSTABLE3,
-      aws_ec2.InstanceSize.MICRO
-    )
-
-    sg_private_host = aws_ec2.SecurityGroup(self, "PrivateHostSG",
-      vpc=vpc,
+  
+  def security_group_create(self) -> None:
+    self.security_group = aws_ec2.SecurityGroup(self, f'{self.stack_name}-PrivateHostSG',
+      vpc=self.vpc,
       allow_all_outbound=True,
       description='security group for private host',
-      security_group_name=f'private-host-sg-{self.stack_name}'
+      security_group_name=f'{self.stack_name}-private-host-sg'
     )
-    cdk.Tags.of(sg_private_host).add('Name', 'private-host-sg')
+    cdk.Tags.of(self.security_group).add('Name', f'{self.stack_name}-private-host-sg')
 
+  def security_group_allow_bastion_access(self) -> None:
     # only allow access from bastion server via SSH
-    sg_private_host.add_ingress_rule(
-      peer=aws_ec2.Peer.security_group_id(bastion_security_group_id),
+    self.security_group.add_ingress_rule(
+      peer=aws_ec2.Peer.security_group_id(self.bastion_security_group_id),
       connection=aws_ec2.Port.tcp(22),
       description='SSH access from bastion host'
     )
 
-    # commands for instance userdata
-    multipart_user_data = aws_ec2.MultipartUserData()
-    commands_user_data = aws_ec2.UserData.for_linux()
-    multipart_user_data.add_user_data_part(commands_user_data, aws_ec2.MultipartBody.SHELL_SCRIPT, True)
-
-    commands_user_data.add_commands("sudo yum update -y")
-    commands_user_data.add_commands("sudo yum install -y libxcrypt-compat")
-    commands_user_data.add_commands("curl -o goodsync-linux-x86_64-release.run https://www.goodsync.com/download/goodsync-linux-x86_64-release.run")
-    commands_user_data.add_commands("sudo ./goodsync-linux-x86_64-release.run")
-
-    private_host = aws_ec2.Instance(self, "PrivateHost",
-      vpc=vpc,
-      instance_type=ec2_instance_type,
+  def host_private_create(self) -> None:
+    # private host instance
+    self.host = aws_ec2.Instance(self, f'{self.stack_name}-PrivateHost',
+      vpc=self.vpc,
+      instance_type=self.ec2_instance_type,
       machine_image=aws_ec2.MachineImage.latest_amazon_linux2023(),
       vpc_subnets=aws_ec2.SubnetSelection(subnet_type=aws_ec2.SubnetType.PRIVATE_WITH_EGRESS),
-      security_group=sg_private_host,
-      key_pair=ec2_key_pair,
-      user_data=commands_user_data
+      security_group=self.security_group,
+      key_pair=self.ec2_key_pair
     )
 
-    # bucket to access in s3
-    BUCKET_NAME = self.node.try_get_context("bucket_name")
+  def ec2_instance_type_get(self) -> None:
+    # https://docs.aws.amazon.com/cdk/api/latest/python/aws_cdk.aws_ec2/InstanceClass.html
+    # https://docs.aws.amazon.com/cdk/api/latest/python/aws_cdk.aws_ec2/InstanceSize.html#aws_cdk.aws_ec2.InstanceSize
+    self.ec2_instance_type = aws_ec2.InstanceType.of(
+      aws_ec2.InstanceClass.BURSTABLE3,
+      aws_ec2.InstanceSize.MICRO
+    )
 
-    # IAM policies attached to instance that allow s3 access to bucket objects
-    private_host.add_to_role_policy(aws_iam.PolicyStatement(
+  def bucket_name_get(self) -> None:
+    # s3 bucket to sync from context
+    self.bucket_name = self.node.try_get_context('bucket_name')
+
+  def host_add_s3_access_policies(self) -> None:
+    # IAM policies attached to instance role that allow s3 access to bucket objects
+    self.host.add_to_role_policy(aws_iam.PolicyStatement(
         effect=aws_iam.Effect.ALLOW,
         actions=[
             's3:ListBucket'
         ],
         resources=[
-            f'arn:aws:s3:::{BUCKET_NAME}',
+            f'arn:aws:s3:::{self.bucket_name}',
         ],
     ))
-    private_host.add_to_role_policy(aws_iam.PolicyStatement(
+    self.host.add_to_role_policy(aws_iam.PolicyStatement(
         effect=aws_iam.Effect.ALLOW,
         actions=[
             's3:GetObject'
         ],
         resources=[
-            f'arn:aws:s3:::{BUCKET_NAME}/*',
+            f'arn:aws:s3:::{self.bucket_name}/*',
         ],
     ))
 
-    cdk.CfnOutput(self, 'PrivateHostId',
-      value=private_host.instance_id,
-      export_name=f'{self.stack_name}-PrivateHostId')
-    
-    cdk.CfnOutput(self, 'PrivateHostSecurityGroupId',
-      value=sg_private_host.security_group_id,
-      export_name=f'{self.stack_name}-PrivateHostSecurityGroupId')
+  def __init__(self, scope: Construct, construct_id: str, vpc, bastion_security_group_id, **kwargs) -> None:
+    super().__init__(scope, construct_id, **kwargs)
 
-    cdk.CfnOutput(self, 'PrivateHostPrivateIP',
-      value=private_host.instance_private_ip,
-      export_name=f'{self.stack_name}-PrivateHostPrivateIP')
+    self.vpc = vpc
+    self.bastion_security_group_id = bastion_security_group_id
+
+    self.ec2_keypair_get()
+
+    self.ec2_instance_type_get()
+
+    self.bucket_name_get()
+
+    # security group
+    self.security_group_create()
+    self.security_group_allow_bastion_access()
+    
+    self.host_private_create()
+    self.host_add_s3_access_policies()    
+
+    self.cfn_output_set()

@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# -*- encoding: utf-8 -*-
-# vim: tabstop=2 shiftwidth=2 softtabstop=2 expandtab
 
 import aws_cdk as cdk
 
@@ -8,35 +6,24 @@ from aws_cdk import (
   Stack,
   aws_ec2,
 )
+
 from constructs import Construct
 
 
 class VpcStack(Stack):
 
-  def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
-    super().__init__(scope, construct_id, **kwargs)
-
-    #XXX: For creating this CDK Stack in the existing VPC,
-    # remove comments from the below codes and
-    # comments out vpc = aws_ec2.Vpc(..) codes,
-    # then pass -c vpc_name=your-existing-vpc to cdk command
-    # for example,
-    # cdk -c vpc_name=your-existing-vpc syth
-    #
-    # vpc_name = self.node.try_get_context("vpc_name") or "default"
-    # self.vpc = aws_ec2.Vpc.from_lookup(self, 'Ec2WithPemKeyStackVPC',
-    #   is_default=True,
-    #   vpc_name=vpc_name)
-
-    #XXX: To use more than 2 AZs, be sure to specify the account and region on your stack.
-    #XXX: https://docs.aws.amazon.com/cdk/api/latest/python/aws_cdk.aws_ec2/Vpc.html
-    self.vpc = aws_ec2.Vpc(self, self.node.try_get_context("vpc_name"),
+  def cfn_output_set(self) -> None:
+    # cloudformation exports
+    cdk.CfnOutput(self, 'VPCId', value=self.vpc.vpc_id,
+      export_name='{}-VPCId'.format(self.stack_name))
+    
+  def vpc_create(self) -> None:
+    self.vpc = aws_ec2.Vpc(self, f'{self.stack_name}-VPC',
       ip_addresses=aws_ec2.IpAddresses.cidr("10.0.0.0/16"),
-      max_azs=3,
+      max_azs=1,
 
       # 'subnetConfiguration' specifies the "subnet groups" to create.
-      # Every subnet group will have a subnet for each AZ, so this
-      # configuration will create `2 groups × 3 AZs = 6` subnets.
+      # every subnet group will have a subnet for each AZ
       subnet_configuration=[
         {
           "cidrMask": 20,
@@ -56,8 +43,20 @@ class VpcStack(Stack):
       }
     )
 
+  def vpc_get(self) -> None:
+    vpc_name = self.node.try_get_context('existing_vpc_name')
+    self.vpc = aws_ec2.Vpc.from_lookup(self, self.node.try_get_context('existing_vpc_name'),
+      is_default=True,
+      vpc_name=vpc_name
+    )
 
-    #XXX: The Name field of every Export member must be specified and consist only of alphanumeric characters, colons, or hyphens.
-    cdk.CfnOutput(self, 'VPCID', value=self.vpc.vpc_id,
-      export_name='{}-VPCID'.format(self.stack_name))
+  def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    super().__init__(scope, construct_id, **kwargs)
+  
+    # use existing vpc?
+    if self.node.try_get_context('use_existing_vpc'):
+      self.vpc_get()
+    else: # do not use existing vpc
+      self.vpc_create()
 
+    self.cfn_output_set()
