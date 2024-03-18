@@ -14,6 +14,23 @@ from constructs import Construct
 
 class Ec2BastionWithPemKeyStack(Stack):
 
+  def __init__(self, scope: Construct, construct_id: str, vpc, **kwargs) -> None:
+    super().__init__(scope, construct_id, **kwargs)
+
+    self.vpc = vpc
+
+    self.ec2_keypair_get()
+    
+    self.ec2_instance_type_get()
+
+    # security group
+    self.security_group_create()
+    self.security_group_allow_ssh_access()
+    
+    self.host_bastion_create()
+
+    self.cfn_output_set()
+
   def cfn_output_set(self) -> None:
     # cloudformation exports
     cdk.CfnOutput(self, 'BastionHostId',
@@ -69,20 +86,3 @@ class Ec2BastionWithPemKeyStack(Stack):
       security_group=self.security_group,
       key_pair=self.ec2_key_pair
     )
-
-  def __init__(self, scope: Construct, construct_id: str, vpc, **kwargs) -> None:
-    super().__init__(scope, construct_id, **kwargs)
-
-    self.vpc = vpc
-
-    self.ec2_keypair_get()
-    
-    self.ec2_instance_type_get()
-
-    # security group
-    self.security_group_create()
-    self.security_group_allow_ssh_access()
-    
-    self.host_bastion_create()
-
-    self.cfn_output_set()

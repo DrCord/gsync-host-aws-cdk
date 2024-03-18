@@ -12,6 +12,17 @@ from constructs import Construct
 
 class VpcStack(Stack):
 
+  def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    super().__init__(scope, construct_id, **kwargs)
+  
+    # use existing vpc?
+    if self.node.try_get_context('use_existing_vpc'):
+      self.vpc_get()
+    else: # do not use existing vpc
+      self.vpc_create()
+
+    self.cfn_output_set()
+
   def cfn_output_set(self) -> None:
     # cloudformation exports
     cdk.CfnOutput(self, 'VPCId', value=self.vpc.vpc_id,
@@ -49,14 +60,3 @@ class VpcStack(Stack):
       is_default=True,
       vpc_name=vpc_name
     )
-
-  def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
-    super().__init__(scope, construct_id, **kwargs)
-  
-    # use existing vpc?
-    if self.node.try_get_context('use_existing_vpc'):
-      self.vpc_get()
-    else: # do not use existing vpc
-      self.vpc_create()
-
-    self.cfn_output_set()

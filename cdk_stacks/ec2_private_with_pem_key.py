@@ -17,6 +17,27 @@ from constructs import Construct
 
 class Ec2PrivateWithPemKeyStack(Stack):
 
+  def __init__(self, scope: Construct, construct_id: str, vpc, bastion_security_group_id, **kwargs) -> None:
+    super().__init__(scope, construct_id, **kwargs)
+
+    self.vpc = vpc
+    self.bastion_security_group_id = bastion_security_group_id
+
+    self.ec2_keypair_get()
+
+    self.ec2_instance_type_get()
+
+    self.bucket_name_get()
+
+    # security group
+    self.security_group_create()
+    self.security_group_allow_bastion_access()
+    
+    self.host_private_create()
+    self.host_add_s3_access_policies()    
+
+    self.cfn_output_set()
+
   def cfn_output_set(self) -> None:
     # cloudformation exports
     cdk.CfnOutput(self, 'PrivateHostId',
@@ -97,24 +118,3 @@ class Ec2PrivateWithPemKeyStack(Stack):
             f'arn:aws:s3:::{self.bucket_name}/*',
         ],
     ))
-
-  def __init__(self, scope: Construct, construct_id: str, vpc, bastion_security_group_id, **kwargs) -> None:
-    super().__init__(scope, construct_id, **kwargs)
-
-    self.vpc = vpc
-    self.bastion_security_group_id = bastion_security_group_id
-
-    self.ec2_keypair_get()
-
-    self.ec2_instance_type_get()
-
-    self.bucket_name_get()
-
-    # security group
-    self.security_group_create()
-    self.security_group_allow_bastion_access()
-    
-    self.host_private_create()
-    self.host_add_s3_access_policies()    
-
-    self.cfn_output_set()
